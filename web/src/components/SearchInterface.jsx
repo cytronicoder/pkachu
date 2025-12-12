@@ -57,10 +57,12 @@ const calculateSearchScore = (row, query) => {
   if (!isNaN(parseFloat(lowerQuery))) {
     const pkaValue = parseFloat(row.pka_value);
     const searchValue = parseFloat(lowerQuery);
-    if (Math.abs(pkaValue - searchValue) < 0.1) {
-      totalScore += 200;
-    } else if (Math.abs(pkaValue - searchValue) < 1) {
-      totalScore += 100;
+    if (!isNaN(pkaValue)) {
+      if (Math.abs(pkaValue - searchValue) < 0.1) {
+        totalScore += 200;
+      } else if (Math.abs(pkaValue - searchValue) < 1) {
+        totalScore += 100;
+      }
     }
   }
 
@@ -469,9 +471,7 @@ const SearchInterface = ({ data, loading }) => {
                 aria-label="Sort results by field"
                 aria-describedby="sort-by-label"
               >
-                {debouncedQuery.trim() && (
-                  <option value="relevance">Relevance</option>
-                )}
+                {query.trim() && <option value="relevance">Relevance</option>}
                 <option value="pka_value">pKa Value</option>
                 <option value="T">Temperature</option>
                 <option value="pka_type">Type</option>
@@ -600,7 +600,7 @@ const SearchInterface = ({ data, loading }) => {
             <tbody>
               {filteredData.map((row, index) => (
                 <tr
-                  key={row.unique_ID}
+                  key={`${row.unique_ID}-${index}`}
                   style={{
                     borderBottom: "1px solid var(--border)",
                     background:
