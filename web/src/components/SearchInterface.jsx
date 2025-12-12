@@ -479,10 +479,12 @@ const SearchInterface = ({ data, loading }) => {
             </label>
 
             <label className="field">
-              <span>Order</span>
+              <span id="sort-order-label">Order</span>
               <select
                 value={sortOrder}
                 onChange={(e) => setSortOrder(e.target.value)}
+                aria-label="Sort order"
+                aria-describedby="sort-order-label"
               >
                 <option value="asc">Ascending</option>
                 <option value="desc">Descending</option>
