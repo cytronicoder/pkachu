@@ -77,7 +77,6 @@ const SearchInterface = ({ data, loading }) => {
   const [limit, setLimit] = useState(DEFAULT_RESULTS_LIMIT);
   const [sortBy, setSortBy] = useState("pka_value");
   const [sortOrder, setSortOrder] = useState("asc");
-  const [columnSorts, setColumnSorts] = useState({});
   const [filterType, setFilterType] = useState("all");
   const [minPka, setMinPka] = useState("");
   const [maxPka, setMaxPka] = useState("");
@@ -126,28 +125,6 @@ const SearchInterface = ({ data, loading }) => {
     }
 
     results.sort((a, b) => {
-      const activeColumnSorts = Object.entries(columnSorts).filter(
-        ([_, order]) => order !== null
-      );
-
-      if (activeColumnSorts.length > 0) {
-        const [columnKey, order] = activeColumnSorts[0];
-        let aVal = a[columnKey];
-        let bVal = b[columnKey];
-
-        if (columnKey === "pka_value" || columnKey === "T") {
-          aVal = parseFloat(aVal) || 0;
-          bVal = parseFloat(bVal) || 0;
-        } else {
-          aVal = String(aVal || "").toLowerCase();
-          bVal = String(bVal || "").toLowerCase();
-        }
-
-        if (aVal < bVal) return order === "asc" ? -1 : 1;
-        if (aVal > bVal) return order === "asc" ? 1 : -1;
-        return 0;
-      }
-
       let aVal = a[sortBy];
       let bVal = b[sortBy];
 
@@ -183,7 +160,6 @@ const SearchInterface = ({ data, loading }) => {
     limit,
     sortBy,
     sortOrder,
-    columnSorts,
     filterType,
     minPka,
     maxPka,
@@ -202,7 +178,7 @@ const SearchInterface = ({ data, loading }) => {
   ].sort();
 
   const renderSortableHeader = (label, columnKey) => {
-    const currentSort = columnSorts[columnKey];
+    const currentSort = sortBy === columnKey ? sortOrder : null;
 
     return (
       <th
@@ -231,21 +207,12 @@ const SearchInterface = ({ data, loading }) => {
   };
 
   const handleColumnSort = (columnKey) => {
-    setColumnSorts((prev) => {
-      const currentSort = prev[columnKey];
-      let newSort;
-
-      if (!currentSort) {
-        newSort = "asc";
-      } else if (currentSort === "asc") {
-        newSort = "desc";
-      } else {
-        newSort = null;
-      }
-
-      const newColumnSorts = { [columnKey]: newSort };
-      return newColumnSorts;
-    });
+    if (sortBy === columnKey) {
+      setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+    } else {
+      setSortBy(columnKey);
+      setSortOrder("asc");
+    }
   };
 
   const handleResetFilters = () => {
@@ -256,7 +223,6 @@ const SearchInterface = ({ data, loading }) => {
     setAssessment("all");
     setSortBy("pka_value");
     setSortOrder("asc");
-    setColumnSorts({});
   };
 
   const handleExportCSV = () => {
