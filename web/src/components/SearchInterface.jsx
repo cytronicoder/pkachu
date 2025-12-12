@@ -268,9 +268,11 @@ const SearchInterface = ({ data, loading }) => {
         headers
           .map((header) => {
             const value = row[header] || "";
-            const escaped = String(value).includes(",")
-              ? `"${String(value).replace(/"/g, '""')}"`
-              : value;
+            let stringValue = String(value);
+            if (stringValue === "NaN") stringValue = "";
+            const escaped = stringValue.includes(",")
+              ? `"${stringValue.replace(/"/g, '""')}"`
+              : stringValue;
             return escaped;
           })
           .join(",")
