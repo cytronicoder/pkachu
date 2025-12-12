@@ -1,8 +1,10 @@
 import { useMemo, useState } from "react";
 
+const DEFAULT_RESULTS_LIMIT = 100;
+
 const SearchInterface = ({ data, loading }) => {
   const [query, setQuery] = useState("");
-  const [limit, setLimit] = useState(100);
+  const [limit, setLimit] = useState(DEFAULT_RESULTS_LIMIT);
   const [sortBy, setSortBy] = useState("pka_value");
   const [sortOrder, setSortOrder] = useState("asc");
   const [columnSorts, setColumnSorts] = useState({});
