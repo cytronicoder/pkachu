@@ -36,7 +36,10 @@ const App = () => {
         }}
       >
         <div>
-          <h1>pKachu</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <h1>pKachu</h1>
+            <img src="/pkachu.png" alt="pKachu sticker" className="sticker" />
+          </div>
           <p style={{ color: "var(--muted)" }}>
             Gotta catch 'em all, one proton at a time.
           </p>

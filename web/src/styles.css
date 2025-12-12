@@ -100,6 +100,28 @@ a:hover {
   color: var(--accent-2);
 }
 
+.sticker {
+  width: 100px;
+  height: auto;
+  transition: transform 0.3s ease;
+  cursor: pointer;
+  margin-left: -25px;
+  transform: rotate(-10deg);
+  z-index: 1000;
+  position: relative;
+}
+
+.sticker:hover {
+  transform: rotate(-5deg) scale(1.2);
+}
+
+@media (max-width: 600px) {
+  .sticker {
+    width: 72px;
+    transform: rotate(-10deg) scale(1);
+  }
+}
+
 .hero {
   display: grid;
   gap: 32px;
