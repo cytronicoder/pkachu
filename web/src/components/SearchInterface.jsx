@@ -1,9 +1,77 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+
+const calculateSearchScore = (row, query) => {
+  if (!query.trim()) return 0;
+
+  const lowerQuery = query.toLowerCase().trim();
+  let totalScore = 0;
+
+  const fieldWeights = {
+    original_IUPAC_names: 100,
+    SMILES: 80,
+    pka_type: 60,
+    unique_ID: 40,
+    InChI: 30,
+    pka_value: 20,
+  };
+
+  Object.entries(fieldWeights).forEach(([field, baseWeight]) => {
+    const fieldValue = String(row[field] || "").toLowerCase();
+
+    if (fieldValue.includes(lowerQuery)) {
+      let fieldScore = baseWeight;
+
+      if (fieldValue === lowerQuery) {
+        fieldScore *= 3;
+      } else if (fieldValue.startsWith(lowerQuery)) {
+        fieldScore *= 2;
+      }
+
+      const lengthRatio = lowerQuery.length / fieldValue.length;
+      if (lengthRatio > 0.8) {
+        fieldScore *= 1.5;
+      } else if (lengthRatio > 0.5) {
+        fieldScore *= 1.2;
+      }
+
+      const matchIndex = fieldValue.indexOf(lowerQuery);
+      if (matchIndex === 0) {
+        fieldScore *= 1.3;
+      } else if (matchIndex < fieldValue.length * 0.2) {
+        fieldScore *= 1.1;
+      }
+
+      totalScore += fieldScore;
+    }
+  });
+
+  const matchingFields = Object.keys(fieldWeights).filter((field) =>
+    String(row[field] || "")
+      .toLowerCase()
+      .includes(lowerQuery)
+  );
+  if (matchingFields.length > 1) {
+    totalScore *= 1 + matchingFields.length * 0.1;
+  }
+
+  if (!isNaN(parseFloat(lowerQuery))) {
+    const pkaValue = parseFloat(row.pka_value);
+    const searchValue = parseFloat(lowerQuery);
+    if (Math.abs(pkaValue - searchValue) < 0.1) {
+      totalScore += 200;
+    } else if (Math.abs(pkaValue - searchValue) < 1) {
+      totalScore += 100;
+    }
+  }
+
+  return totalScore;
+};
 
 const DEFAULT_RESULTS_LIMIT = 100;
 
 const SearchInterface = ({ data, loading }) => {
   const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [limit, setLimit] = useState(DEFAULT_RESULTS_LIMIT);
   const [sortBy, setSortBy] = useState("pka_value");
   const [sortOrder, setSortOrder] = useState("asc");
@@ -13,84 +81,25 @@ const SearchInterface = ({ data, loading }) => {
   const [maxPka, setMaxPka] = useState("");
   const [assessment, setAssessment] = useState("all");
 
-  const calculateSearchScore = (row, query) => {
-    if (!query.trim()) return 0;
+  useEffect(() => {
+    const debounceTimer = setTimeout(() => {
+      setDebouncedQuery(query);
+    }, 300);
 
-    const lowerQuery = query.toLowerCase().trim();
-    let totalScore = 0;
-
-    const fieldWeights = {
-      original_IUPAC_names: 100,
-      SMILES: 80,
-      pka_type: 60,
-      unique_ID: 40,
-      InChI: 30,
-      pka_value: 20,
-    };
-
-    Object.entries(fieldWeights).forEach(([field, baseWeight]) => {
-      const fieldValue = String(row[field] || "").toLowerCase();
-
-      if (fieldValue.includes(lowerQuery)) {
-        let fieldScore = baseWeight;
-
-        if (fieldValue === lowerQuery) {
-          fieldScore *= 3;
-        } else if (fieldValue.startsWith(lowerQuery)) {
-          fieldScore *= 2;
-        }
-
-        const lengthRatio = lowerQuery.length / fieldValue.length;
-        if (lengthRatio > 0.8) {
-          fieldScore *= 1.5;
-        } else if (lengthRatio > 0.5) {
-          fieldScore *= 1.2;
-        }
-
-        const matchIndex = fieldValue.indexOf(lowerQuery);
-        if (matchIndex === 0) {
-          fieldScore *= 1.3;
-        } else if (matchIndex < fieldValue.length * 0.2) {
-          fieldScore *= 1.1;
-        }
-
-        totalScore += fieldScore;
-      }
-    });
-
-    const matchingFields = Object.keys(fieldWeights).filter((field) =>
-      String(row[field] || "")
-        .toLowerCase()
-        .includes(lowerQuery)
-    );
-    if (matchingFields.length > 1) {
-      totalScore *= 1 + matchingFields.length * 0.1;
-    }
-
-    if (!isNaN(parseFloat(lowerQuery))) {
-      const pkaValue = parseFloat(row.pka_value);
-      const searchValue = parseFloat(lowerQuery);
-      if (Math.abs(pkaValue - searchValue) < 0.1) {
-        totalScore += 200;
-      } else if (Math.abs(pkaValue - searchValue) < 1) {
-        totalScore += 100;
-      }
-    }
-
-    return totalScore;
-  };
+    return () => clearTimeout(debounceTimer);
+  }, [query]);
 
   const filteredData = useMemo(() => {
     let results = data;
 
-    if (query.trim()) {
+    if (debouncedQuery.trim()) {
       results = data.map((row) => ({
         ...row,
-        searchScore: calculateSearchScore(row, query),
+        searchScore: calculateSearchScore(row, debouncedQuery),
       }));
     }
 
-    if (query.trim()) {
+    if (debouncedQuery.trim()) {
       results = results.filter((row) => row.searchScore > 0);
     }
 
@@ -155,7 +164,7 @@ const SearchInterface = ({ data, loading }) => {
       if (aVal > bVal) return sortOrder === "asc" ? 1 : -1;
 
       if (
-        query.trim() &&
+        debouncedQuery.trim() &&
         sortBy !== "relevance" &&
         a.searchScore !== b.searchScore
       ) {
@@ -168,7 +177,7 @@ const SearchInterface = ({ data, loading }) => {
     return results.slice(0, limit);
   }, [
     data,
-    query,
+    debouncedQuery,
     limit,
     sortBy,
     sortOrder,
