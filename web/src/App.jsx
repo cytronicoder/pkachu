@@ -39,7 +39,7 @@ const App = () => {
         }}
       >
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
             <h1>pKachu</h1>
             <img src="/pkachu.png" alt="pKachu sticker" className="sticker" />
           </div>
@@ -53,6 +53,7 @@ const App = () => {
             className={`btn ${
               currentPage === "search" ? "btn-primary" : "btn-secondary"
             }`}
+            aria-current={currentPage === "search" ? "page" : undefined}
           >
             Search
           </button>
@@ -61,6 +62,7 @@ const App = () => {
             className={`btn ${
               currentPage === "about" ? "btn-primary" : "btn-secondary"
             }`}
+            aria-current={currentPage === "about" ? "page" : undefined}
           >
             About the Data
           </button>
