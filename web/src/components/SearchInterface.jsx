@@ -557,7 +557,7 @@ const SearchInterface = ({ data, loading }) => {
             <tbody>
               {filteredData.map((row, index) => (
                 <tr
-                  key={index}
+                  key={row.unique_ID}
                   style={{
                     borderBottom: "1px solid var(--border)",
                     background:
