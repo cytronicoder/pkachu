@@ -7,6 +7,7 @@ import "./styles.css";
 const App = () => {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [currentPage, setCurrentPage] = useState("search");
 
   useEffect(() => {
@@ -17,10 +18,12 @@ const App = () => {
       complete: (results) => {
         setData(results.data);
         setLoading(false);
+        setError(null);
       },
       error: (err) => {
         console.error("Error parsing CSV:", err);
         setLoading(false);
+        setError("Failed to load data. Please try refreshing the page.");
       },
     });
   }, []);
@@ -64,8 +67,12 @@ const App = () => {
         </nav>
       </header>
 
-      {currentPage === "search" ? (
-        <SearchInterface data={data} loading={loading} />
+      {loading ? (
+        <div className="panel">Loading dataset...</div>
+      ) : error ? (
+        <div className="panel error">{error}</div>
+      ) : currentPage === "search" ? (
+        <SearchInterface data={data} loading={false} />
       ) : (
         <About />
       )}

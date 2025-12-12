@@ -320,6 +320,12 @@ a:hover {
   line-height: 1.5;
 }
 
+.error {
+  color: var(--accent-3);
+  background: rgba(255, 69, 0, 0.1);
+  border-color: var(--accent-3);
+}
+
 .eyebrow {
   letter-spacing: 0.08em;
   text-transform: uppercase;
