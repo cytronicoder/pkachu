@@ -372,6 +372,11 @@ a:hover {
   box-shadow: 0 0 0 3px rgba(255, 215, 0, 0.1);
 }
 
+.field input:not(select) {
+  background-image: none;
+  padding-right: 16px;
+}
+
 .field input[type="number"]::-webkit-outer-spin-button,
 .field input[type="number"]::-webkit-inner-spin-button {
   -webkit-appearance: none;
