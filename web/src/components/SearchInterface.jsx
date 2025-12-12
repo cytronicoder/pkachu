@@ -81,6 +81,7 @@ const SearchInterface = ({ data, loading }) => {
   const [minPka, setMinPka] = useState("");
   const [maxPka, setMaxPka] = useState("");
   const [assessment, setAssessment] = useState("all");
+  const [rangeError, setRangeError] = useState("");
 
   useEffect(() => {
     const debounceTimer = setTimeout(() => {
@@ -89,6 +90,20 @@ const SearchInterface = ({ data, loading }) => {
 
     return () => clearTimeout(debounceTimer);
   }, [query]);
+
+  useEffect(() => {
+    if (minPka && maxPka) {
+      const min = parseFloat(minPka);
+      const max = parseFloat(maxPka);
+      if (!isNaN(min) && !isNaN(max) && min > max) {
+        setRangeError("Minimum pKa must be less than or equal to maximum pKa.");
+      } else {
+        setRangeError("");
+      }
+    } else {
+      setRangeError("");
+    }
+  }, [minPka, maxPka]);
 
   const filteredData = useMemo(() => {
     let results = data;
@@ -108,16 +123,18 @@ const SearchInterface = ({ data, loading }) => {
       results = results.filter((row) => row.pka_type === filterType);
     }
 
-    if (minPka) {
-      results = results.filter(
-        (row) => parseFloat(row.pka_value) >= parseFloat(minPka)
-      );
-    }
+    if (!rangeError) {
+      if (minPka) {
+        results = results.filter(
+          (row) => parseFloat(row.pka_value) >= parseFloat(minPka)
+        );
+      }
 
-    if (maxPka) {
-      results = results.filter(
-        (row) => parseFloat(row.pka_value) <= parseFloat(maxPka)
-      );
+      if (maxPka) {
+        results = results.filter(
+          (row) => parseFloat(row.pka_value) <= parseFloat(maxPka)
+        );
+      }
     }
 
     if (assessment !== "all") {
@@ -164,6 +181,7 @@ const SearchInterface = ({ data, loading }) => {
     minPka,
     maxPka,
     assessment,
+    rangeError,
   ]);
 
   if (loading) {
@@ -408,6 +426,18 @@ const SearchInterface = ({ data, loading }) => {
                   aria-describedby="pka-range-label"
                 />
               </div>
+              {rangeError && (
+                <p
+                  style={{
+                    color: "var(--accent-3)",
+                    fontSize: "0.875rem",
+                    marginTop: "4px",
+                    marginBottom: "0",
+                  }}
+                >
+                  {rangeError}
+                </p>
+              )}
             </label>
 
             <label htmlFor="assessment" className="field">
