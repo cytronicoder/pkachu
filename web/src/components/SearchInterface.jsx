@@ -491,11 +491,14 @@ const SearchInterface = ({ data, loading }) => {
               </select>
             </label>
 
-            <label className="field">
-              <span>Results Per Page</span>
+            <label htmlFor="results-per-page" className="field">
+              <span id="results-per-page-label">Results Per Page</span>
               <select
+                id="results-per-page"
                 value={limit}
                 onChange={(e) => setLimit(parseInt(e.target.value))}
+                aria-label="Results per page"
+                aria-describedby="results-per-page-label"
               >
                 <option value={25}>25</option>
                 <option value={50}>50</option>
