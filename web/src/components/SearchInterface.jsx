@@ -280,9 +280,14 @@ const SearchInterface = ({ data, loading }) => {
             const value = row[header] || "";
             let stringValue = String(value);
             if (stringValue === "NaN") stringValue = "";
-            const escaped = stringValue.includes(",")
-              ? `"${stringValue.replace(/"/g, '""')}"`
-              : stringValue;
+            let escaped = stringValue;
+            if (
+              stringValue.includes(",") ||
+              stringValue.includes('"') ||
+              stringValue.includes("\n")
+            ) {
+              escaped = `"${stringValue.replace(/"/g, '""')}"`;
+            }
             return escaped;
           })
           .join(",")
