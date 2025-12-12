@@ -82,6 +82,7 @@ const SearchInterface = ({ data, loading }) => {
   const [maxPka, setMaxPka] = useState("");
   const [assessment, setAssessment] = useState("all");
   const [rangeError, setRangeError] = useState("");
+  const [notification, setNotification] = useState("");
 
   useEffect(() => {
     const debounceTimer = setTimeout(() => {
@@ -104,6 +105,13 @@ const SearchInterface = ({ data, loading }) => {
       setRangeError("");
     }
   }, [minPka, maxPka]);
+
+  useEffect(() => {
+    if (notification) {
+      const timer = setTimeout(() => setNotification(""), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [notification]);
 
   const filteredData = useMemo(() => {
     let results = data;
@@ -241,11 +249,13 @@ const SearchInterface = ({ data, loading }) => {
     setAssessment("all");
     setSortBy("pka_value");
     setSortOrder("asc");
+    setRangeError("");
+    setNotification("");
   };
 
   const handleExportCSV = () => {
     if (filteredData.length === 0) {
-      alert("No data to export");
+      setNotification("No data to export");
       return;
     }
 
@@ -292,7 +302,7 @@ const SearchInterface = ({ data, loading }) => {
 
   const handleExportJSON = () => {
     if (filteredData.length === 0) {
-      alert("No data to export");
+      setNotification("No data to export");
       return;
     }
 
@@ -545,6 +555,18 @@ const SearchInterface = ({ data, loading }) => {
                 Export JSON
               </button>
             </div>
+            {notification && (
+              <p
+                style={{
+                  marginTop: "8px",
+                  fontSize: "0.875rem",
+                  color: "var(--accent-3)",
+                  textAlign: "center",
+                }}
+              >
+                {notification}
+              </p>
+            )}
           </div>
         </div>
 
