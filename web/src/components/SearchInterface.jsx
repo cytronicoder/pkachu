@@ -544,6 +544,7 @@ const SearchInterface = ({ data, loading }) => {
                 onClick={handleExportCSV}
                 className="btn btn-secondary"
                 style={{ width: "100%" }}
+                disabled={filteredData.length === 0}
               >
                 Export CSV
               </button>
@@ -551,6 +552,7 @@ const SearchInterface = ({ data, loading }) => {
                 onClick={handleExportJSON}
                 className="btn btn-secondary"
                 style={{ width: "100%" }}
+                disabled={filteredData.length === 0}
               >
                 Export JSON
               </button>
