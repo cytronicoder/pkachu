@@ -359,15 +359,30 @@ const SearchInterface = ({ data, loading }) => {
               marginBottom: "24px",
             }}
           >
-            <label className="field">
-              <span>Search (Name, SMILES, pKa)</span>
+            <label htmlFor="search-input" className="field">
+              <span id="search-label">Search (Name, SMILES, pKa)</span>
               <input
+                id="search-input"
                 type="text"
                 placeholder="e.g., acetic acid or CC(=O)O or 4.75"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 className="search-input"
+                aria-label="Search compounds by name, SMILES structure, or pKa value"
+                aria-describedby="search-label search-hint"
+                role="searchbox"
               />
+              <span
+                id="search-hint"
+                style={{
+                  fontSize: "0.875rem",
+                  color: "var(--muted)",
+                  marginTop: "4px",
+                  display: "block",
+                }}
+              >
+                Search is debounced for performance
+              </span>
             </label>
           </div>
 
@@ -378,11 +393,14 @@ const SearchInterface = ({ data, loading }) => {
               gap: "16px",
             }}
           >
-            <label className="field">
-              <span>pKa Type</span>
+            <label htmlFor="filter-type" className="field">
+              <span id="filter-type-label">pKa Type</span>
               <select
+                id="filter-type"
                 value={filterType}
                 onChange={(e) => setFilterType(e.target.value)}
+                aria-label="Filter by pKa type"
+                aria-describedby="filter-type-label"
               >
                 <option value="all">All Types</option>
                 {pkaTypes.map((type) => (
@@ -394,35 +412,44 @@ const SearchInterface = ({ data, loading }) => {
             </label>
 
             <label className="field">
-              <span>pKa Range</span>
+              <span id="pka-range-label">pKa Range</span>
               <div
                 style={{ display: "flex", gap: "8px", alignItems: "center" }}
               >
                 <input
+                  id="min-pka"
                   type="number"
                   step="0.1"
                   placeholder="min"
                   value={minPka}
                   onChange={(e) => setMinPka(e.target.value)}
                   style={{ width: "50%" }}
+                  aria-label="Minimum pKa value"
+                  aria-describedby="pka-range-label"
                 />
-                <span>—</span>
+                <span aria-hidden="true">—</span>
                 <input
+                  id="max-pka"
                   type="number"
                   step="0.1"
                   placeholder="max"
                   value={maxPka}
                   onChange={(e) => setMaxPka(e.target.value)}
                   style={{ width: "50%" }}
+                  aria-label="Maximum pKa value"
+                  aria-describedby="pka-range-label"
                 />
               </div>
             </label>
 
-            <label className="field">
-              <span>Assessment</span>
+            <label htmlFor="assessment" className="field">
+              <span id="assessment-label">Assessment</span>
               <select
+                id="assessment"
                 value={assessment}
                 onChange={(e) => setAssessment(e.target.value)}
+                aria-label="Filter by assessment status"
+                aria-describedby="assessment-label"
               >
                 <option value="all">All</option>
                 {assessments.map((a) => (
@@ -433,13 +460,18 @@ const SearchInterface = ({ data, loading }) => {
               </select>
             </label>
 
-            <label className="field">
-              <span>Sort By</span>
+            <label htmlFor="sort-by" className="field">
+              <span id="sort-by-label">Sort By</span>
               <select
+                id="sort-by"
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value)}
+                aria-label="Sort results by field"
+                aria-describedby="sort-by-label"
               >
-                {query.trim() && <option value="relevance">Relevance</option>}
+                {debouncedQuery.trim() && (
+                  <option value="relevance">Relevance</option>
+                )}
                 <option value="pka_value">pKa Value</option>
                 <option value="T">Temperature</option>
                 <option value="pka_type">Type</option>
