@@ -628,7 +628,7 @@ const SearchInterface = ({ data, loading }) => {
                 }}
               >
                 Use filters like type:acid, assessment:Reliable, pka:4.7-4.9 or
-                pka:>=4.5. Search is debounced for performance.
+                pka:{'>='}4.5. Search is debounced for performance.
                 <span
                   style={{
                     display: "block",
@@ -785,7 +785,7 @@ const SearchInterface = ({ data, loading }) => {
                   <p style={{ fontSize: "0.875rem", color: "var(--muted)", marginTop: "6px", marginBottom: 0 }}>
                     Query pKa filter active ({activePkaDesc}); UI range inputs are ignored.
                   </p>
-                )
+                )}
               </div>
               {rangeError && (
                 <p
