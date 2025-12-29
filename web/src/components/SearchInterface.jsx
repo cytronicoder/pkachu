@@ -345,7 +345,7 @@ const SearchInterface = ({ data, loading }) => {
       });
     }
 
-    if (filterType !== "all") {
+    if (filterType !== "all" && !filters.type) {
       results = results.filter((row) => row.pka_type === filterType);
     }
 
@@ -363,7 +363,7 @@ const SearchInterface = ({ data, loading }) => {
       }
     }
 
-    if (assessment !== "all") {
+    if (assessment !== "all" && !filters.assessment) {
       results = results.filter((row) => row.assessment === assessment);
     }
 
@@ -633,7 +633,17 @@ const SearchInterface = ({ data, loading }) => {
                 >
                   Field filters are always applied together (logical AND) and
                   are not affected by the Match Mode setting.
-                </span>{" "}
+                </span>
+                <span
+                  style={{
+                    display: "block",
+                    color: "var(--muted)",
+                    marginTop: "6px",
+                    fontSize: "0.85rem",
+                  }}
+                >
+                  Query-specified field filters (e.g. <code>type:acid</code> or <code>assessment:Reliable</code>) override the corresponding UI controls.
+                </span>
                 {preferExact && (
                   <span
                     style={{
