@@ -332,15 +332,34 @@ const SearchInterface = ({ data, loading }) => {
         if (isNaN(value)) return false;
         const { min, max, operator } = filters.pka;
         const EPS = 1e-3;
-        if (operator === "=") return Math.abs(value - min) <= EPS;
-        if (operator === ">") return value > min + EPS;
-        if (operator === ">=") return value >= min - EPS;
-        if (operator === "<") return value < max - EPS;
-        if (operator === "<=") return value <= max + EPS;
-        if (min !== null && max !== null)
+
+        if (operator) {
+          switch (operator) {
+            case "=":
+              return Math.abs(value - min) <= EPS;
+            case ">":
+              return value > min + EPS;
+            case ">=":
+              return value >= min - EPS;
+            case "<":
+              return value < max - EPS;
+            case "<=":
+              return value <= max + EPS;
+            default:
+              break;
+          }
+        }
+
+        if (min !== null && max !== null) {
           return value + EPS >= min && value - EPS <= max;
-        if (min !== null) return value + EPS >= min;
-        if (max !== null) return value - EPS <= max;
+        }
+        if (min !== null) {
+          return value + EPS >= min;
+        }
+        if (max !== null) {
+          return value - EPS <= max;
+        }
+
         return true;
       });
     }
