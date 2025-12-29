@@ -603,8 +603,16 @@ const SearchInterface = ({ data, loading }) => {
                   <code>type</code>, <code>assessment</code>, <code>id</code>,{" "}
                   <code>unique_id</code>, and <code>pka</code>. Other
                   colon-separated tokens are searched literally.
-                </span>
-                {preferExact && (
+                </span>                <span
+                  style={{
+                    display: "block",
+                    color: "var(--muted)",
+                    marginTop: "6px",
+                    fontSize: "0.85rem",
+                  }}
+                >
+                  Field filters are always applied together (logical AND) and are not affected by the Match Mode setting.
+                </span>                {preferExact && (
                   <span
                     style={{
                       display: "block",
@@ -639,6 +647,9 @@ const SearchInterface = ({ data, loading }) => {
                 <option value="all">Match all terms (AND)</option>
                 <option value="any">Match any term (OR)</option>
               </select>
+              <div style={{marginTop:'6px'}}>
+                <small style={{color:'var(--muted)'}}>Note: Match Mode only affects free-text search tokens; field filters (type, assessment, id, unique_id, pka) are always combined with AND.</small>
+              </div>
             </label>
 
             <label
