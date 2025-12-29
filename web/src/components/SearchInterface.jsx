@@ -55,23 +55,24 @@ const parseSearchQuery = (query) => {
   };
 
   rawTokens.forEach((token) => {
-    const match = token.match(/^(\w+):(.*)$/);
+    const match = token.match(/^([A-Za-z_][A-Za-z0-9_]*):(.*)$/);
     if (match) {
       const key = match[1].toLowerCase();
       const value = match[2].trim();
-      if (key === "type") {
+
+      if (key === "type" && value) {
         filters.type = value;
         return;
       }
-      if (key === "assessment") {
+      if (key === "assessment" && value) {
         filters.assessment = value;
         return;
       }
-      if (key === "id" || key === "unique_id") {
+      if ((key === "id" || key === "unique_id") && value) {
         filters.id = value;
         return;
       }
-      if (key === "pka") {
+      if (key === "pka" && value) {
         filters.pka = parsePkaFilter(value);
         return;
       }
@@ -590,6 +591,19 @@ const SearchInterface = ({ data, loading }) => {
               >
                 Use filters like type:acid, assessment:Reliable, pka:4.7-4.9 or
                 pka:&gt;=4.5. Search is debounced for performance.
+                <span
+                  style={{
+                    display: "block",
+                    color: "var(--muted)",
+                    marginTop: "6px",
+                    fontSize: "0.85rem",
+                  }}
+                >
+                  Note: Only these keys are recognized as filters —{" "}
+                  <code>type</code>, <code>assessment</code>, <code>id</code>,{" "}
+                  <code>unique_id</code>, and <code>pka</code>. Other
+                  colon-separated tokens are searched literally.
+                </span>
                 {preferExact && (
                   <span
                     style={{
