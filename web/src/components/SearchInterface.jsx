@@ -315,13 +315,16 @@ const SearchInterface = ({ data, loading }) => {
         const value = parseFloat(row.pka_value);
         if (isNaN(value)) return false;
         const { min, max, operator } = filters.pka;
-        if (operator === ">") return value > min;
-        if (operator === ">=") return value >= min;
-        if (operator === "<") return value < max;
-        if (operator === "<=") return value <= max;
-        if (min !== null && max !== null) return value >= min && value <= max;
-        if (min !== null) return value >= min;
-        if (max !== null) return value <= max;
+        const EPS = 1e-3;
+        if (operator === "=") return Math.abs(value - min) <= EPS;
+        if (operator === ">") return value > min + EPS;
+        if (operator === ">=") return value >= min - EPS;
+        if (operator === "<") return value < max - EPS;
+        if (operator === "<=") return value <= max + EPS;
+        if (min !== null && max !== null)
+          return value + EPS >= min && value - EPS <= max;
+        if (min !== null) return value + EPS >= min;
+        if (max !== null) return value - EPS <= max;
         return true;
       });
     }
@@ -603,7 +606,8 @@ const SearchInterface = ({ data, loading }) => {
                   <code>type</code>, <code>assessment</code>, <code>id</code>,{" "}
                   <code>unique_id</code>, and <code>pka</code>. Other
                   colon-separated tokens are searched literally.
-                </span>                <span
+                </span>{" "}
+                <span
                   style={{
                     display: "block",
                     color: "var(--muted)",
@@ -611,8 +615,10 @@ const SearchInterface = ({ data, loading }) => {
                     fontSize: "0.85rem",
                   }}
                 >
-                  Field filters are always applied together (logical AND) and are not affected by the Match Mode setting.
-                </span>                {preferExact && (
+                  Field filters are always applied together (logical AND) and
+                  are not affected by the Match Mode setting.
+                </span>{" "}
+                {preferExact && (
                   <span
                     style={{
                       display: "block",
@@ -647,8 +653,12 @@ const SearchInterface = ({ data, loading }) => {
                 <option value="all">Match all terms (AND)</option>
                 <option value="any">Match any term (OR)</option>
               </select>
-              <div style={{marginTop:'6px'}}>
-                <small style={{color:'var(--muted)'}}>Note: Match Mode only affects free-text search tokens; field filters (type, assessment, id, unique_id, pka) are always combined with AND.</small>
+              <div style={{ marginTop: "6px" }}>
+                <small style={{ color: "var(--muted)" }}>
+                  Note: Match Mode only affects free-text search tokens; field
+                  filters (type, assessment, id, unique_id, pka) are always
+                  combined with AND.
+                </small>
               </div>
             </label>
 
