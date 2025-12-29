@@ -1,70 +1,168 @@
 import { useEffect, useMemo, useState } from "react";
 
-const calculateSearchScore = (row, query) => {
-  if (!query.trim()) return 0;
+const fieldWeights = {
+  original_IUPAC_names: 100,
+  SMILES: 80,
+  pka_type: 60,
+  unique_ID: 40,
+  InChI: 30,
+  pka_value: 20,
+};
 
-  const lowerQuery = query.toLowerCase().trim();
-  let totalScore = 0;
+const parsePkaFilter = (rawValue) => {
+  if (!rawValue) return null;
+  const trimmed = rawValue.trim();
+  const rangeMatch = trimmed.match(
+    /^(-?\d*\.?\d+)\s*(?:-|\.\.)\s*(-?\d*\.?\d+)$/
+  );
+  if (rangeMatch) {
+    const min = parseFloat(rangeMatch[1]);
+    const max = parseFloat(rangeMatch[2]);
+    if (!isNaN(min) && !isNaN(max)) {
+      return { min: Math.min(min, max), max: Math.max(min, max) };
+    }
+  }
 
-  const fieldWeights = {
-    original_IUPAC_names: 100,
-    SMILES: 80,
-    pka_type: 60,
-    unique_ID: 40,
-    InChI: 30,
-    pka_value: 20,
+  const comparisonMatch = trimmed.match(/^([<>]=?)\s*(-?\d*\.?\d+)$/);
+  if (comparisonMatch) {
+    const operator = comparisonMatch[1];
+    const value = parseFloat(comparisonMatch[2]);
+    if (!isNaN(value)) {
+      return {
+        min: operator.includes(">") ? value : null,
+        max: operator.includes("<") ? value : null,
+        operator,
+      };
+    }
+  }
+
+  const exactValue = parseFloat(trimmed);
+  if (!isNaN(exactValue)) {
+    return { min: exactValue, max: exactValue, operator: "=" };
+  }
+
+  return null;
+};
+
+const parseSearchQuery = (query) => {
+  const rawTokens = query.trim().split(/\s+/).filter(Boolean);
+  const textTokens = [];
+  const filters = {
+    type: null,
+    assessment: null,
+    id: null,
+    pka: null,
   };
 
-  Object.entries(fieldWeights).forEach(([field, baseWeight]) => {
-    const fieldValue = String(row[field] || "").toLowerCase();
-
-    if (fieldValue.includes(lowerQuery)) {
-      let fieldScore = baseWeight;
-
-      if (fieldValue === lowerQuery) {
-        fieldScore *= 3;
-      } else if (fieldValue.startsWith(lowerQuery)) {
-        fieldScore *= 2;
+  rawTokens.forEach((token) => {
+    const match = token.match(/^(\w+):(.*)$/);
+    if (match) {
+      const key = match[1].toLowerCase();
+      const value = match[2].trim();
+      if (key === "type") {
+        filters.type = value;
+        return;
       }
-
-      const lengthRatio = lowerQuery.length / fieldValue.length;
-      if (lengthRatio > 0.8) {
-        fieldScore *= 1.5;
-      } else if (lengthRatio > 0.5) {
-        fieldScore *= 1.2;
+      if (key === "assessment") {
+        filters.assessment = value;
+        return;
       }
-
-      const matchIndex = fieldValue.indexOf(lowerQuery);
-      if (matchIndex === 0) {
-        fieldScore *= 1.3;
-      } else if (matchIndex < fieldValue.length * 0.2) {
-        fieldScore *= 1.1;
+      if (key === "id" || key === "unique_id") {
+        filters.id = value;
+        return;
       }
+      if (key === "pka") {
+        filters.pka = parsePkaFilter(value);
+        return;
+      }
+    }
 
-      totalScore += fieldScore;
+    textTokens.push(token);
+  });
+
+  const numericHints = Array.from(
+    query.matchAll(/-?\d*\.?\d+/g),
+    (match) => parseFloat(match[0])
+  ).filter((value) => !isNaN(value));
+
+  return {
+    textTokens: textTokens.map((token) => token.toLowerCase()),
+    filters,
+    numericHints,
+  };
+};
+
+const calculateSearchScore = (row, textTokens, numericHints, matchMode) => {
+  if (!textTokens.length) return 0;
+
+  let totalScore = 0;
+  let matchedTokens = 0;
+
+  textTokens.forEach((token) => {
+    let tokenMatched = false;
+
+    Object.entries(fieldWeights).forEach(([field, baseWeight]) => {
+      const fieldValue = String(row[field] || "").toLowerCase();
+
+      if (fieldValue.includes(token)) {
+        tokenMatched = true;
+        let fieldScore = baseWeight;
+
+        if (fieldValue === token) {
+          fieldScore *= 3;
+        } else if (fieldValue.startsWith(token)) {
+          fieldScore *= 2;
+        }
+
+        const lengthRatio = token.length / fieldValue.length;
+        if (lengthRatio > 0.8) {
+          fieldScore *= 1.5;
+        } else if (lengthRatio > 0.5) {
+          fieldScore *= 1.2;
+        }
+
+        const matchIndex = fieldValue.indexOf(token);
+        if (matchIndex === 0) {
+          fieldScore *= 1.3;
+        } else if (matchIndex < fieldValue.length * 0.2) {
+          fieldScore *= 1.1;
+        }
+
+        totalScore += fieldScore;
+      }
+    });
+
+    if (tokenMatched) {
+      matchedTokens += 1;
     }
   });
 
-  const matchingFields = Object.keys(fieldWeights).filter((field) =>
-    String(row[field] || "")
-      .toLowerCase()
-      .includes(lowerQuery)
-  );
-  if (matchingFields.length > 1) {
-    totalScore *= 1 + matchingFields.length * 0.1;
+  if (matchMode === "all" && matchedTokens !== textTokens.length) {
+    return 0;
+  }
+  if (matchMode === "any" && matchedTokens === 0) {
+    return 0;
   }
 
-  if (!isNaN(parseFloat(lowerQuery))) {
+  const matchedFields = Object.keys(fieldWeights).filter((field) =>
+    textTokens.some((token) =>
+      String(row[field] || "").toLowerCase().includes(token)
+    )
+  );
+  if (matchedFields.length > 1) {
+    totalScore *= 1 + matchedFields.length * 0.1;
+  }
+
+  numericHints.forEach((value) => {
     const pkaValue = parseFloat(row.pka_value);
-    const searchValue = parseFloat(lowerQuery);
     if (!isNaN(pkaValue)) {
-      if (Math.abs(pkaValue - searchValue) < 0.1) {
+      if (Math.abs(pkaValue - value) < 0.1) {
         totalScore += 200;
-      } else if (Math.abs(pkaValue - searchValue) < 1) {
+      } else if (Math.abs(pkaValue - value) < 1) {
         totalScore += 100;
       }
     }
-  }
+  });
 
   return totalScore;
 };
@@ -81,8 +179,14 @@ const SearchInterface = ({ data, loading }) => {
   const [minPka, setMinPka] = useState("");
   const [maxPka, setMaxPka] = useState("");
   const [assessment, setAssessment] = useState("all");
+  const [matchMode, setMatchMode] = useState("all");
   const [rangeError, setRangeError] = useState("");
   const [notification, setNotification] = useState("");
+
+  const parsedQuery = useMemo(
+    () => parseSearchQuery(debouncedQuery),
+    [debouncedQuery]
+  );
 
   useEffect(() => {
     const debounceTimer = setTimeout(() => {
@@ -113,18 +217,65 @@ const SearchInterface = ({ data, loading }) => {
     }
   }, [notification]);
 
-  const filteredData = useMemo(() => {
+  const { matches, displayedResults } = useMemo(() => {
     let results = data;
+    const { textTokens, filters, numericHints } = parsedQuery;
+    const hasTextQuery = textTokens.length > 0;
 
-    if (debouncedQuery.trim()) {
+    if (hasTextQuery) {
       results = data.map((row) => ({
         ...row,
-        searchScore: calculateSearchScore(row, debouncedQuery),
+        searchScore: calculateSearchScore(
+          row,
+          textTokens,
+          numericHints,
+          matchMode
+        ),
       }));
     }
 
-    if (debouncedQuery.trim()) {
+    if (hasTextQuery) {
       results = results.filter((row) => row.searchScore > 0);
+    }
+
+    if (filters.type) {
+      results = results.filter(
+        (row) =>
+          String(row.pka_type || "").toLowerCase() ===
+          filters.type.toLowerCase()
+      );
+    }
+
+    if (filters.assessment) {
+      results = results.filter(
+        (row) =>
+          String(row.assessment || "").toLowerCase() ===
+          filters.assessment.toLowerCase()
+      );
+    }
+
+    if (filters.id) {
+      results = results.filter(
+        (row) =>
+          String(row.unique_ID || "").toLowerCase() ===
+          filters.id.toLowerCase()
+      );
+    }
+
+    if (filters.pka) {
+      results = results.filter((row) => {
+        const value = parseFloat(row.pka_value);
+        if (isNaN(value)) return false;
+        const { min, max, operator } = filters.pka;
+        if (operator === ">") return value > min;
+        if (operator === ">=") return value >= min;
+        if (operator === "<") return value < max;
+        if (operator === "<=") return value <= max;
+        if (min !== null && max !== null) return value >= min && value <= max;
+        if (min !== null) return value >= min;
+        if (max !== null) return value <= max;
+        return true;
+      });
     }
 
     if (filterType !== "all") {
@@ -178,10 +329,13 @@ const SearchInterface = ({ data, loading }) => {
       return 0;
     });
 
-    return results.slice(0, limit);
+    return {
+      matches: results,
+      displayedResults: results.slice(0, limit),
+    };
   }, [
     data,
-    debouncedQuery,
+    parsedQuery,
     limit,
     sortBy,
     sortOrder,
@@ -190,6 +344,7 @@ const SearchInterface = ({ data, loading }) => {
     maxPka,
     assessment,
     rangeError,
+    matchMode,
   ]);
 
   if (loading) {
@@ -249,12 +404,13 @@ const SearchInterface = ({ data, loading }) => {
     setAssessment("all");
     setSortBy("pka_value");
     setSortOrder("asc");
+    setMatchMode("all");
     setRangeError("");
     setNotification("");
   };
 
   const handleExportCSV = () => {
-    if (filteredData.length === 0) {
+    if (matches.length === 0) {
       setNotification("No data to export");
       return;
     }
@@ -274,7 +430,7 @@ const SearchInterface = ({ data, loading }) => {
 
     const csvContent = [
       headers.join(","),
-      ...filteredData.map((row) =>
+      ...matches.map((row) =>
         headers
           .map((header) => {
             const value = row[header] || "";
@@ -306,12 +462,12 @@ const SearchInterface = ({ data, loading }) => {
   };
 
   const handleExportJSON = () => {
-    if (filteredData.length === 0) {
+    if (matches.length === 0) {
       setNotification("No data to export");
       return;
     }
 
-    const blob = new Blob([JSON.stringify(filteredData, null, 2)], {
+    const blob = new Blob([JSON.stringify(matches, null, 2)], {
       type: "application/json",
     });
     const url = URL.createObjectURL(blob);
@@ -384,7 +540,8 @@ const SearchInterface = ({ data, loading }) => {
                   display: "block",
                 }}
               >
-                Search is debounced for performance
+                Use filters like type:acid, assessment:Reliable, pka:4.7-4.9 or
+                pka:&gt;=4.5. Search is debounced for performance.
               </span>
             </label>
           </div>
@@ -396,6 +553,20 @@ const SearchInterface = ({ data, loading }) => {
               gap: "16px",
             }}
           >
+            <label htmlFor="match-mode" className="field">
+              <span id="match-mode-label">Match Mode</span>
+              <select
+                id="match-mode"
+                value={matchMode}
+                onChange={(e) => setMatchMode(e.target.value)}
+                aria-label="Match mode for search tokens"
+                aria-describedby="match-mode-label"
+              >
+                <option value="all">Match all terms (AND)</option>
+                <option value="any">Match any term (OR)</option>
+              </select>
+            </label>
+
             <label htmlFor="filter-type" className="field">
               <span id="filter-type-label">pKa Type</span>
               <select
@@ -507,7 +678,7 @@ const SearchInterface = ({ data, loading }) => {
             </label>
 
             <label htmlFor="results-per-page" className="field">
-              <span id="results-per-page-label">Results Per Page</span>
+              <span id="results-per-page-label">Rows Shown</span>
               <select
                 id="results-per-page"
                 value={limit}
@@ -549,7 +720,7 @@ const SearchInterface = ({ data, loading }) => {
                 onClick={handleExportCSV}
                 className="btn btn-secondary"
                 style={{ width: "100%" }}
-                disabled={filteredData.length === 0}
+                disabled={matches.length === 0}
               >
                 Export CSV
               </button>
@@ -557,7 +728,7 @@ const SearchInterface = ({ data, loading }) => {
                 onClick={handleExportJSON}
                 className="btn btn-secondary"
                 style={{ width: "100%" }}
-                disabled={filteredData.length === 0}
+                disabled={matches.length === 0}
               >
                 Export JSON
               </button>
@@ -597,7 +768,8 @@ const SearchInterface = ({ data, loading }) => {
       >
         <div className="panel__header">
           <h3>
-            Results ({filteredData.length} of {data.length} entries)
+            Showing {displayedResults.length} of {matches.length} matches (out of{" "}
+            {data.length} entries)
           </h3>
         </div>
         <div
@@ -630,7 +802,7 @@ const SearchInterface = ({ data, loading }) => {
               </tr>
             </thead>
             <tbody>
-              {filteredData.map((row, index) => (
+              {displayedResults.map((row, index) => (
                 <tr
                   key={`${row.unique_ID}-${index}`}
                   style={{
@@ -705,7 +877,7 @@ const SearchInterface = ({ data, loading }) => {
               ))}
             </tbody>
           </table>
-          {filteredData.length === 0 && (
+          {matches.length === 0 && (
             <div
               style={{
                 padding: "24px",
