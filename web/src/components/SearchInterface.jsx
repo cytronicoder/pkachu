@@ -55,7 +55,7 @@ const parseSearchQuery = (query) => {
   };
 
   rawTokens.forEach((token) => {
-    const match = token.match(/^([A-Za-z_][A-Za-z0-9_]*):(.*)$/);
+    const match = token.match(/^([A-Za-z_][A-Za-z0-9_]*):(.+)$/);
     if (match) {
       const key = match[1].toLowerCase();
       const value = match[2].trim();
