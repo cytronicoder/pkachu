@@ -81,7 +81,7 @@ const parseSearchQuery = (query) => {
     textTokens.push(token);
   });
 
-  const numericHints = Array.from(query.matchAll(/-?\d*\.?\d+/g), (match) =>
+  const numericHints = Array.from(query.matchAll(/\b-?\d*\.?\d+\b/g), (match) =>
     parseFloat(match[0])
   ).filter((value) => !isNaN(value));
 
