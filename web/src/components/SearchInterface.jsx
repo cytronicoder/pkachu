@@ -102,7 +102,6 @@ const calculateSearchScore = (
   matchMode,
   options = {}
 ) => {
-  const { preferExact = true } = options;
 
   if (!textTokens.length) return 0;
 
@@ -121,7 +120,10 @@ const calculateSearchScore = (
 
         if (fieldValue === token) {
           fieldScore *= 5;
-          if (preferExact) totalScore += 1000;
+          if (preferExact) totalScore += 10000;
+          console.log(
+            `Exact match for ${token} in ${field}: ${fieldValue}, score += 10000`
+          );
         } else {
           const baseName = fieldValue
             .split(/[;,()]/)[0]
@@ -136,10 +138,16 @@ const calculateSearchScore = (
               );
             if (isModified) {
               fieldScore *= 2;
-              if (preferExact) totalScore += 100;
+              if (preferExact) totalScore += 1000;
+              console.log(
+                `Base match modified for ${token} in ${field}: ${fieldValue}, score += 1000`
+              );
             } else {
               fieldScore *= 3.5;
-              if (preferExact) totalScore += 500;
+              if (preferExact) totalScore += 5000;
+              console.log(
+                `Base match for ${token} in ${field}: ${fieldValue}, score += 5000`
+              );
             }
           }
 
@@ -175,6 +183,9 @@ const calculateSearchScore = (
         }
 
         totalScore += fieldScore;
+        console.log(
+          `Field ${field} score for ${token}: ${fieldScore}, total now ${totalScore}`
+        );
       }
     });
 
@@ -212,6 +223,7 @@ const calculateSearchScore = (
     }
   });
 
+  console.log(`Final score for row ${row.unique_ID}: ${totalScore}`);
   return totalScore;
 };
 
@@ -228,7 +240,8 @@ const SearchInterface = ({ data, loading }) => {
   const [maxPka, setMaxPka] = useState("");
   const [assessment, setAssessment] = useState("all");
   const [matchMode, setMatchMode] = useState("all");
-  const [preferExact, setPreferExact] = useState(true);
+  const [showHelp, setShowHelp] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [rangeError, setRangeError] = useState("");
   const [notification, setNotification] = useState("");
 
@@ -237,8 +250,6 @@ const SearchInterface = ({ data, loading }) => {
     [debouncedQuery]
   );
 
-  // If a pKa filter is present in the query, show a short description and
-  // let it take precedence over the UI range controls.
   const activePkaFilter = parsedQuery.filters.pka;
   const activePkaDesc = activePkaFilter
     ? (() => {
@@ -293,8 +304,7 @@ const SearchInterface = ({ data, loading }) => {
           row,
           textTokens,
           numericHints,
-          matchMode,
-          { preferExact }
+          matchMode
         ),
       }));
     }
@@ -387,32 +397,47 @@ const SearchInterface = ({ data, loading }) => {
     }
 
     results.sort((a, b) => {
-      let aVal = a[sortBy];
-      let bVal = b[sortBy];
+      if (hasTextQuery) {
+        if (a.searchScore !== b.searchScore) {
+          return b.searchScore - a.searchScore;
+        }
 
-      if (sortBy === "pka_value" || sortBy === "T") {
-        aVal = parseFloat(aVal) || 0;
-        bVal = parseFloat(bVal) || 0;
-      } else if (sortBy === "relevance") {
-        aVal = a.searchScore || 0;
-        bVal = b.searchScore || 0;
+        let aVal = a[sortBy];
+        let bVal = b[sortBy];
+
+        if (sortBy === "pka_value" || sortBy === "T") {
+          aVal = parseFloat(aVal) || 0;
+          bVal = parseFloat(bVal) || 0;
+        } else if (sortBy === "relevance") {
+          aVal = a.searchScore || 0;
+          bVal = b.searchScore || 0;
+        } else {
+          aVal = String(aVal || "").toLowerCase();
+          bVal = String(bVal || "").toLowerCase();
+        }
+
+        if (aVal < bVal) return sortOrder === "asc" ? -1 : 1;
+        if (aVal > bVal) return sortOrder === "asc" ? 1 : -1;
+        return 0;
       } else {
-        aVal = String(aVal || "").toLowerCase();
-        bVal = String(bVal || "").toLowerCase();
+        let aVal = a[sortBy];
+        let bVal = b[sortBy];
+
+        if (sortBy === "pka_value" || sortBy === "T") {
+          aVal = parseFloat(aVal) || 0;
+          bVal = parseFloat(bVal) || 0;
+        } else if (sortBy === "relevance") {
+          aVal = a.searchScore || 0;
+          bVal = b.searchScore || 0;
+        } else {
+          aVal = String(aVal || "").toLowerCase();
+          bVal = String(bVal || "").toLowerCase();
+        }
+
+        if (aVal < bVal) return sortOrder === "asc" ? -1 : 1;
+        if (aVal > bVal) return sortOrder === "asc" ? 1 : -1;
+        return 0;
       }
-
-      if (aVal < bVal) return sortOrder === "asc" ? -1 : 1;
-      if (aVal > bVal) return sortOrder === "asc" ? 1 : -1;
-
-      if (
-        debouncedQuery.trim() &&
-        sortBy !== "relevance" &&
-        a.searchScore !== b.searchScore
-      ) {
-        return b.searchScore - a.searchScore;
-      }
-
-      return 0;
     });
 
     return {
@@ -606,7 +631,25 @@ const SearchInterface = ({ data, loading }) => {
             }}
           >
             <label htmlFor="search-input" className="field">
-              <span id="search-label">Search (Name, SMILES, pKa)</span>
+              <div
+                style={{ display: "flex", alignItems: "center", gap: "8px" }}
+              >
+                <span id="search-label">Search (Name, SMILES, pKa)</span>
+                <button
+                  type="button"
+                  onClick={() => setShowHelp(!showHelp)}
+                  aria-expanded={showHelp}
+                  aria-label="Toggle search help"
+                  style={{
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                  }}
+                >
+                  ℹ️
+                </button>
+              </div>
+
               <input
                 id="search-input"
                 type="text"
@@ -618,6 +661,7 @@ const SearchInterface = ({ data, loading }) => {
                 aria-describedby="search-label search-hint"
                 role="searchbox"
               />
+
               <span
                 id="search-hint"
                 style={{
@@ -627,65 +671,86 @@ const SearchInterface = ({ data, loading }) => {
                   display: "block",
                 }}
               >
-                Use filters like type:acid, assessment:Reliable, pka:4.7-4.9 or
-                pka:{'>='}4.5. Search is debounced for performance.
-                <span
+                Filters: <code>type:</code> <code>assessment:</code>{" "}
+                <code>pka:</code>. Press ℹ️ for details.
+              </span>
+
+              {showHelp && (
+                <div
                   style={{
-                    display: "block",
-                    color: "var(--muted)",
-                    marginTop: "6px",
-                    fontSize: "0.85rem",
+                    marginTop: "8px",
+                    padding: "8px",
+                    border: "1px solid var(--border)",
+                    borderRadius: 8,
+                    background: "rgba(255,255,255,0.01)",
                   }}
                 >
-                  Note: Only these keys are recognized as filters —{" "}
-                  <code>type</code>, <code>assessment</code>, <code>id</code>,{" "}
-                  <code>unique_id</code>, and <code>pka</code>. Other
-                  colon-separated tokens are searched literally.
-                </span>{" "}
-                <span
-                  style={{
-                    display: "block",
-                    color: "var(--muted)",
-                    marginTop: "6px",
-                    fontSize: "0.85rem",
-                  }}
-                >
-                  Field filters are always applied together (logical AND) and
-                  are not affected by the Match Mode setting.
-                </span>
-                <span
-                  style={{
-                    display: "block",
-                    color: "var(--muted)",
-                    marginTop: "6px",
-                    fontSize: "0.85rem",
-                  }}
-                >
-                  Query-specified field filters (e.g. <code>type:acid</code> or <code>assessment:Reliable</code>) override the corresponding UI controls.
-                </span>
-                {preferExact && (
-                  <span
+                  <p
                     style={{
-                      display: "block",
+                      margin: 0,
+                      fontSize: "0.9rem",
                       color: "var(--muted)",
-                      marginTop: "6px",
-                      fontSize: "0.85rem",
                     }}
                   >
-                    🔎 Exact-name prioritization is ON
-                  </span>
-                )}
-              </span>
+                    Recognized filters: <code>type</code>,{" "}
+                    <code>assessment</code>, <code>id</code>,{" "}
+                    <code>unique_id</code>, <code>pka</code>.
+                  </p>
+                  <p
+                    style={{
+                      margin: "6px 0 0 0",
+                      fontSize: "0.9rem",
+                      color: "var(--muted)",
+                    }}
+                  >
+                    Query pKa examples: <code>pka:4.5</code>,{" "}
+                    <code>pka:4.5-5.0</code>, <code>pka:&gt;=4.5</code>.
+                  </p>
+                  <p
+                    style={{
+                      margin: "6px 0 0 0",
+                      fontSize: "0.9rem",
+                      color: "var(--muted)",
+                    }}
+                  >
+                    Note: Query field filters override the corresponding UI
+                    controls. Match mode only applies to free-text tokens.
+                  </p>
+                </div>
+              )}
             </label>
           </div>
 
-          <div
-            className="search-grid"
-            style={{
-              gridTemplateColumns: "1fr",
-              gap: "16px",
-            }}
-          >
+          <div style={{ marginTop: "16px" }}>
+            <button
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              style={{
+                background: "var(--panel-strong)",
+                border: "1px solid var(--border)",
+                borderRadius: "8px",
+                padding: "8px 16px",
+                color: "var(--text)",
+                cursor: "pointer",
+                fontSize: "14px",
+                fontFamily: "inherit",
+              }}
+              aria-expanded={showAdvanced}
+              aria-controls="advanced-filters"
+            >
+              {showAdvanced ? "Hide" : "Show"} Advanced Filters
+            </button>
+          </div>
+
+          {showAdvanced && (
+            <div
+              id="advanced-filters"
+              className="search-grid"
+              style={{
+                gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
+                gap: "16px",
+                marginTop: "16px",
+              }}
+            >
             <label htmlFor="match-mode" className="field">
               <span id="match-mode-label">Match Mode</span>
               <select
@@ -698,37 +763,6 @@ const SearchInterface = ({ data, loading }) => {
                 <option value="all">Match all terms (AND)</option>
                 <option value="any">Match any term (OR)</option>
               </select>
-              <div style={{ marginTop: "6px" }}>
-                <small style={{ color: "var(--muted)" }}>
-                  Note: Match Mode only affects free-text search tokens; field
-                  filters (type, assessment, id, unique_id, pka) are always
-                  combined with AND.
-                </small>
-              </div>
-            </label>
-
-            <label
-              className="field"
-              title="When enabled, results with exact or base-name matches (e.g., 'acetic acid') will be ranked higher"
-            >
-              <span>Prefer exact names</span>
-              <div
-                style={{ display: "flex", alignItems: "center", gap: "8px" }}
-              >
-                <input
-                  id="prefer-exact"
-                  type="checkbox"
-                  checked={preferExact}
-                  onChange={(e) => setPreferExact(e.target.checked)}
-                  aria-label="Prioritize exact compound names"
-                />
-                <label
-                  htmlFor="prefer-exact"
-                  style={{ fontSize: "0.9rem", color: "var(--muted)" }}
-                >
-                  On
-                </label>
-              </div>
             </label>
 
             <label htmlFor="filter-type" className="field">
@@ -765,7 +799,11 @@ const SearchInterface = ({ data, loading }) => {
                   aria-label="Minimum pKa value"
                   aria-describedby="pka-range-label"
                   disabled={!!activePkaFilter}
-                  title={activePkaFilter ? "Ignored when a query pKa filter is active" : undefined}
+                  title={
+                    activePkaFilter
+                      ? "Ignored when a query pKa filter is active"
+                      : undefined
+                  }
                 />
                 <span aria-hidden="true">—</span>
                 <input
@@ -779,12 +817,14 @@ const SearchInterface = ({ data, loading }) => {
                   aria-label="Maximum pKa value"
                   aria-describedby="pka-range-label"
                   disabled={!!activePkaFilter}
-                  title={activePkaFilter ? "Ignored when a query pKa filter is active" : undefined}
+                  title={
+                    activePkaFilter
+                      ? "Ignored when a query pKa filter is active"
+                      : undefined
+                  }
                 />
                 {activePkaFilter && (
-                  <p style={{ fontSize: "0.875rem", color: "var(--muted)", marginTop: "6px", marginBottom: 0 }}>
-                    Query pKa filter active ({activePkaDesc}); UI range inputs are ignored.
-                  </p>
+                  <span className="badge">Active: {activePkaDesc}</span>
                 )}
               </div>
               {rangeError && (
@@ -867,6 +907,7 @@ const SearchInterface = ({ data, loading }) => {
               </select>
             </label>
           </div>
+          )}
 
           <div
             style={{
