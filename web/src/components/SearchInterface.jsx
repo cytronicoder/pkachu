@@ -237,6 +237,21 @@ const SearchInterface = ({ data, loading }) => {
     [debouncedQuery]
   );
 
+  // If a pKa filter is present in the query, show a short description and
+  // let it take precedence over the UI range controls.
+  const activePkaFilter = parsedQuery.filters.pka;
+  const activePkaDesc = activePkaFilter
+    ? (() => {
+        const { min, max, operator } = activePkaFilter;
+        if (operator === "=") return `=${min}`;
+        if (operator) return `${operator}${operator.includes(">") ? min : max}`;
+        if (min !== null && max !== null) return `${min}-${max}`;
+        if (min !== null) return `>=${min}`;
+        if (max !== null) return `<=${max}`;
+        return null;
+      })()
+    : null;
+
   useEffect(() => {
     const debounceTimer = setTimeout(() => {
       setDebouncedQuery(query);
@@ -334,7 +349,7 @@ const SearchInterface = ({ data, loading }) => {
       results = results.filter((row) => row.pka_type === filterType);
     }
 
-    if (!rangeError) {
+    if (!rangeError && !filters.pka) {
       if (minPka) {
         results = results.filter(
           (row) => parseFloat(row.pka_value) >= parseFloat(minPka)
@@ -720,6 +735,8 @@ const SearchInterface = ({ data, loading }) => {
                   style={{ width: "50%" }}
                   aria-label="Minimum pKa value"
                   aria-describedby="pka-range-label"
+                  disabled={!!activePkaFilter}
+                  title={activePkaFilter ? "Ignored when a query pKa filter is active" : undefined}
                 />
                 <span aria-hidden="true">—</span>
                 <input
@@ -732,7 +749,14 @@ const SearchInterface = ({ data, loading }) => {
                   style={{ width: "50%" }}
                   aria-label="Maximum pKa value"
                   aria-describedby="pka-range-label"
+                  disabled={!!activePkaFilter}
+                  title={activePkaFilter ? "Ignored when a query pKa filter is active" : undefined}
                 />
+                {activePkaFilter && (
+                  <p style={{ fontSize: "0.875rem", color: "var(--muted)", marginTop: "6px", marginBottom: 0 }}>
+                    Query pKa filter active ({activePkaDesc}); UI range inputs are ignored.
+                  </p>
+                )
               </div>
               {rangeError && (
                 <p
