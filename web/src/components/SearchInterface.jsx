@@ -80,9 +80,8 @@ const parseSearchQuery = (query) => {
     textTokens.push(token);
   });
 
-  const numericHints = Array.from(
-    query.matchAll(/-?\d*\.?\d+/g),
-    (match) => parseFloat(match[0])
+  const numericHints = Array.from(query.matchAll(/-?\d*\.?\d+/g), (match) =>
+    parseFloat(match[0])
   ).filter((value) => !isNaN(value));
 
   return {
@@ -92,7 +91,17 @@ const parseSearchQuery = (query) => {
   };
 };
 
-const calculateSearchScore = (row, textTokens, numericHints, matchMode) => {
+const escapeRegExp = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const calculateSearchScore = (
+  row,
+  textTokens,
+  numericHints,
+  matchMode,
+  options = {}
+) => {
+  const { preferExact = true } = options;
+
   if (!textTokens.length) return 0;
 
   let totalScore = 0;
@@ -109,9 +118,44 @@ const calculateSearchScore = (row, textTokens, numericHints, matchMode) => {
         let fieldScore = baseWeight;
 
         if (fieldValue === token) {
-          fieldScore *= 3;
-        } else if (fieldValue.startsWith(token)) {
-          fieldScore *= 2;
+          fieldScore *= 5;
+          if (preferExact) totalScore += 1000;
+        } else {
+          const baseName = fieldValue
+            .split(/[;,()]/)[0]
+            .replace(/-$/, "")
+            .trim();
+          if (baseName === token) {
+            const nextChar = fieldValue[token.length] || "";
+            const isModified =
+              fieldValue.length > token.length &&
+              /[ ,\-\/\(\)\[]/.test(
+                nextChar + fieldValue.slice(token.length, token.length + 2)
+              );
+            if (isModified) {
+              fieldScore *= 2;
+              if (preferExact) totalScore += 100;
+            } else {
+              fieldScore *= 3.5;
+              if (preferExact) totalScore += 500;
+            }
+          }
+
+          if (fieldValue.startsWith(token)) {
+            const nextChar = fieldValue[token.length] || "";
+            if (nextChar === "," || nextChar === "-" || nextChar === ")") {
+              fieldScore *= 1.3;
+            } else {
+              fieldScore *= 2;
+            }
+          }
+
+          const wordRe = new RegExp(
+            `(^|[^a-z0-9])${escapeRegExp(token)}($|[^a-z0-9])`
+          );
+          if (wordRe.test(fieldValue)) {
+            fieldScore *= 1.5;
+          }
         }
 
         const lengthRatio = token.length / fieldValue.length;
@@ -146,7 +190,9 @@ const calculateSearchScore = (row, textTokens, numericHints, matchMode) => {
 
   const matchedFields = Object.keys(fieldWeights).filter((field) =>
     textTokens.some((token) =>
-      String(row[field] || "").toLowerCase().includes(token)
+      String(row[field] || "")
+        .toLowerCase()
+        .includes(token)
     )
   );
   if (matchedFields.length > 1) {
@@ -180,6 +226,7 @@ const SearchInterface = ({ data, loading }) => {
   const [maxPka, setMaxPka] = useState("");
   const [assessment, setAssessment] = useState("all");
   const [matchMode, setMatchMode] = useState("all");
+  const [preferExact, setPreferExact] = useState(true);
   const [rangeError, setRangeError] = useState("");
   const [notification, setNotification] = useState("");
 
@@ -229,7 +276,8 @@ const SearchInterface = ({ data, loading }) => {
           row,
           textTokens,
           numericHints,
-          matchMode
+          matchMode,
+          { preferExact }
         ),
       }));
     }
@@ -257,8 +305,7 @@ const SearchInterface = ({ data, loading }) => {
     if (filters.id) {
       results = results.filter(
         (row) =>
-          String(row.unique_ID || "").toLowerCase() ===
-          filters.id.toLowerCase()
+          String(row.unique_ID || "").toLowerCase() === filters.id.toLowerCase()
       );
     }
 
@@ -405,6 +452,7 @@ const SearchInterface = ({ data, loading }) => {
     setSortBy("pka_value");
     setSortOrder("asc");
     setMatchMode("all");
+    setPreferExact(true);
     setRangeError("");
     setNotification("");
   };
@@ -542,6 +590,18 @@ const SearchInterface = ({ data, loading }) => {
               >
                 Use filters like type:acid, assessment:Reliable, pka:4.7-4.9 or
                 pka:&gt;=4.5. Search is debounced for performance.
+                {preferExact && (
+                  <span
+                    style={{
+                      display: "block",
+                      color: "var(--muted)",
+                      marginTop: "6px",
+                      fontSize: "0.85rem",
+                    }}
+                  >
+                    🔎 Exact-name prioritization is ON
+                  </span>
+                )}
               </span>
             </label>
           </div>
@@ -565,6 +625,30 @@ const SearchInterface = ({ data, loading }) => {
                 <option value="all">Match all terms (AND)</option>
                 <option value="any">Match any term (OR)</option>
               </select>
+            </label>
+
+            <label
+              className="field"
+              title="When enabled, results with exact or base-name matches (e.g., 'acetic acid') will be ranked higher"
+            >
+              <span>Prefer exact names</span>
+              <div
+                style={{ display: "flex", alignItems: "center", gap: "8px" }}
+              >
+                <input
+                  id="prefer-exact"
+                  type="checkbox"
+                  checked={preferExact}
+                  onChange={(e) => setPreferExact(e.target.checked)}
+                  aria-label="Prioritize exact compound names"
+                />
+                <label
+                  htmlFor="prefer-exact"
+                  style={{ fontSize: "0.9rem", color: "var(--muted)" }}
+                >
+                  On
+                </label>
+              </div>
             </label>
 
             <label htmlFor="filter-type" className="field">
@@ -768,8 +852,8 @@ const SearchInterface = ({ data, loading }) => {
       >
         <div className="panel__header">
           <h3>
-            Showing {displayedResults.length} of {matches.length} matches (out of{" "}
-            {data.length} entries)
+            Showing {displayedResults.length} of {matches.length} matches (out
+            of {data.length} entries)
           </h3>
         </div>
         <div
