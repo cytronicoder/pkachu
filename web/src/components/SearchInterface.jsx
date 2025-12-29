@@ -1,71 +1,229 @@
 import { useEffect, useMemo, useState } from "react";
 
-const calculateSearchScore = (row, query) => {
-  if (!query.trim()) return 0;
+const fieldWeights = {
+  original_IUPAC_names: 100,
+  SMILES: 80,
+  pka_type: 60,
+  unique_ID: 40,
+  InChI: 30,
+  pka_value: 20,
+};
 
-  const lowerQuery = query.toLowerCase().trim();
-  let totalScore = 0;
+const parsePkaFilter = (rawValue) => {
+  if (!rawValue) return null;
+  const trimmed = rawValue.trim();
+  const rangeMatch = trimmed.match(
+    /^(-?\d*\.?\d+)\s*(?:-|\.\.)\s*(-?\d*\.?\d+)$/
+  );
+  if (rangeMatch) {
+    const min = parseFloat(rangeMatch[1]);
+    const max = parseFloat(rangeMatch[2]);
+    if (!isNaN(min) && !isNaN(max)) {
+      return { min: Math.min(min, max), max: Math.max(min, max) };
+    }
+  }
 
-  const fieldWeights = {
-    original_IUPAC_names: 100,
-    SMILES: 80,
-    pka_type: 60,
-    unique_ID: 40,
-    InChI: 30,
-    pka_value: 20,
+  const comparisonMatch = trimmed.match(/^([<>]=?)\s*(-?\d*\.?\d+)$/);
+  if (comparisonMatch) {
+    const operator = comparisonMatch[1];
+    const value = parseFloat(comparisonMatch[2]);
+    if (!isNaN(value)) {
+      return {
+        min: operator.includes(">") ? value : null,
+        max: operator.includes("<") ? value : null,
+        operator,
+      };
+    }
+  }
+
+  const exactValue = parseFloat(trimmed);
+  if (!isNaN(exactValue)) {
+    return { min: exactValue, max: exactValue, operator: "=" };
+  }
+
+  return null;
+};
+
+const parseSearchQuery = (query) => {
+  const rawTokens = query.trim().split(/\s+/).filter(Boolean);
+  const textTokens = [];
+  const filters = {
+    type: null,
+    assessment: null,
+    id: null,
+    pka: null,
   };
 
-  Object.entries(fieldWeights).forEach(([field, baseWeight]) => {
-    const fieldValue = String(row[field] || "").toLowerCase();
+  rawTokens.forEach((token) => {
+    const match = token.match(/^([A-Za-z_][A-Za-z0-9_]*):(.+)$/);
+    if (match) {
+      const key = match[1].toLowerCase();
+      const value = match[2].trim();
 
-    if (fieldValue.includes(lowerQuery)) {
-      let fieldScore = baseWeight;
-
-      if (fieldValue === lowerQuery) {
-        fieldScore *= 3;
-      } else if (fieldValue.startsWith(lowerQuery)) {
-        fieldScore *= 2;
+      if (key === "type" && value) {
+        filters.type = value;
+        return;
       }
-
-      const lengthRatio = lowerQuery.length / fieldValue.length;
-      if (lengthRatio > 0.8) {
-        fieldScore *= 1.5;
-      } else if (lengthRatio > 0.5) {
-        fieldScore *= 1.2;
+      if (key === "assessment" && value) {
+        filters.assessment = value;
+        return;
       }
-
-      const matchIndex = fieldValue.indexOf(lowerQuery);
-      if (matchIndex === 0) {
-        fieldScore *= 1.3;
-      } else if (matchIndex < fieldValue.length * 0.2) {
-        fieldScore *= 1.1;
+      if ((key === "id" || key === "unique_id") && value) {
+        filters.id = value;
+        return;
       }
+      if (key === "pka" && value) {
+        filters.pka = parsePkaFilter(value);
+        return;
+      }
+    }
 
-      totalScore += fieldScore;
+    textTokens.push(token);
+  });
+
+  const numericHints = Array.from(
+    textTokens.join(" ").matchAll(/\b-?\d*\.?\d+\b/g),
+    (match) => parseFloat(match[0])
+  ).filter((value) => !isNaN(value));
+
+  return {
+    textTokens: textTokens.map((token) => token.toLowerCase()),
+    filters,
+    numericHints,
+  };
+};
+
+const escapeRegExp = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const calculateSearchScore = (
+  row,
+  textTokens,
+  numericHints,
+  matchMode,
+  options = {}
+) => {
+
+  if (!textTokens.length) return 0;
+
+  let totalScore = 0;
+  let matchedTokens = 0;
+
+  textTokens.forEach((token) => {
+    let tokenMatched = false;
+
+    Object.entries(fieldWeights).forEach(([field, baseWeight]) => {
+      const fieldValue = String(row[field] || "").toLowerCase();
+
+      if (fieldValue.includes(token)) {
+        tokenMatched = true;
+        let fieldScore = baseWeight;
+
+        if (fieldValue === token) {
+          fieldScore *= 5;
+          if (preferExact) totalScore += 10000;
+          console.log(
+            `Exact match for ${token} in ${field}: ${fieldValue}, score += 10000`
+          );
+        } else {
+          const baseName = fieldValue
+            .split(/[;,()]/)[0]
+            .replace(/-$/, "")
+            .trim();
+          if (baseName === token) {
+            const nextChar = fieldValue[token.length] || "";
+            const isModified =
+              fieldValue.length > token.length &&
+              /[ ,\-\/\(\)\[]/.test(
+                nextChar + fieldValue.slice(token.length, token.length + 2)
+              );
+            if (isModified) {
+              fieldScore *= 2;
+              if (preferExact) totalScore += 1000;
+              console.log(
+                `Base match modified for ${token} in ${field}: ${fieldValue}, score += 1000`
+              );
+            } else {
+              fieldScore *= 3.5;
+              if (preferExact) totalScore += 5000;
+              console.log(
+                `Base match for ${token} in ${field}: ${fieldValue}, score += 5000`
+              );
+            }
+          }
+
+          if (fieldValue.startsWith(token)) {
+            const nextChar = fieldValue[token.length] || "";
+            if (nextChar === "," || nextChar === "-" || nextChar === ")") {
+              fieldScore *= 1.3;
+            } else {
+              fieldScore *= 2;
+            }
+          }
+
+          const wordRe = new RegExp(
+            `(^|[^a-z0-9])${escapeRegExp(token)}($|[^a-z0-9])`
+          );
+          if (wordRe.test(fieldValue)) {
+            fieldScore *= 1.5;
+          }
+        }
+
+        const lengthRatio = token.length / fieldValue.length;
+        if (lengthRatio > 0.8) {
+          fieldScore *= 1.5;
+        } else if (lengthRatio > 0.5) {
+          fieldScore *= 1.2;
+        }
+
+        const matchIndex = fieldValue.indexOf(token);
+        if (matchIndex === 0) {
+          fieldScore *= 1.3;
+        } else if (matchIndex < fieldValue.length * 0.2) {
+          fieldScore *= 1.1;
+        }
+
+        totalScore += fieldScore;
+        console.log(
+          `Field ${field} score for ${token}: ${fieldScore}, total now ${totalScore}`
+        );
+      }
+    });
+
+    if (tokenMatched) {
+      matchedTokens += 1;
     }
   });
 
-  const matchingFields = Object.keys(fieldWeights).filter((field) =>
-    String(row[field] || "")
-      .toLowerCase()
-      .includes(lowerQuery)
-  );
-  if (matchingFields.length > 1) {
-    totalScore *= 1 + matchingFields.length * 0.1;
+  if (matchMode === "all" && matchedTokens !== textTokens.length) {
+    return 0;
+  }
+  if (matchMode === "any" && matchedTokens === 0) {
+    return 0;
   }
 
-  if (!isNaN(parseFloat(lowerQuery))) {
+  const matchedFields = Object.keys(fieldWeights).filter((field) =>
+    textTokens.some((token) =>
+      String(row[field] || "")
+        .toLowerCase()
+        .includes(token)
+    )
+  );
+  if (matchedFields.length > 1) {
+    totalScore *= 1 + matchedFields.length * 0.1;
+  }
+
+  numericHints.forEach((value) => {
     const pkaValue = parseFloat(row.pka_value);
-    const searchValue = parseFloat(lowerQuery);
     if (!isNaN(pkaValue)) {
-      if (Math.abs(pkaValue - searchValue) < 0.1) {
+      if (Math.abs(pkaValue - value) < 0.1) {
         totalScore += 200;
-      } else if (Math.abs(pkaValue - searchValue) < 1) {
+      } else if (Math.abs(pkaValue - value) < 1) {
         totalScore += 100;
       }
     }
-  }
+  });
 
+  console.log(`Final score for row ${row.unique_ID}: ${totalScore}`);
   return totalScore;
 };
 
@@ -81,8 +239,29 @@ const SearchInterface = ({ data, loading }) => {
   const [minPka, setMinPka] = useState("");
   const [maxPka, setMaxPka] = useState("");
   const [assessment, setAssessment] = useState("all");
+  const [matchMode, setMatchMode] = useState("all");
+  const [showHelp, setShowHelp] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [rangeError, setRangeError] = useState("");
   const [notification, setNotification] = useState("");
+
+  const parsedQuery = useMemo(
+    () => parseSearchQuery(debouncedQuery),
+    [debouncedQuery]
+  );
+
+  const activePkaFilter = parsedQuery.filters.pka;
+  const activePkaDesc = activePkaFilter
+    ? (() => {
+        const { min, max, operator } = activePkaFilter;
+        if (operator === "=") return `=${min}`;
+        if (operator) return `${operator}${operator.includes(">") ? min : max}`;
+        if (min !== null && max !== null) return `${min}-${max}`;
+        if (min !== null) return `>=${min}`;
+        if (max !== null) return `<=${max}`;
+        return null;
+      })()
+    : null;
 
   useEffect(() => {
     const debounceTimer = setTimeout(() => {
@@ -113,25 +292,93 @@ const SearchInterface = ({ data, loading }) => {
     }
   }, [notification]);
 
-  const filteredData = useMemo(() => {
+  const { matches, displayedResults } = useMemo(() => {
     let results = data;
+    const { textTokens, filters, numericHints } = parsedQuery;
+    const hasTextQuery = textTokens.length > 0;
 
-    if (debouncedQuery.trim()) {
+    if (hasTextQuery) {
       results = data.map((row) => ({
         ...row,
-        searchScore: calculateSearchScore(row, debouncedQuery),
+        searchScore: calculateSearchScore(
+          row,
+          textTokens,
+          numericHints,
+          matchMode
+        ),
       }));
     }
 
-    if (debouncedQuery.trim()) {
+    if (hasTextQuery) {
       results = results.filter((row) => row.searchScore > 0);
     }
 
-    if (filterType !== "all") {
+    if (filters.type) {
+      results = results.filter(
+        (row) =>
+          String(row.pka_type || "").toLowerCase() ===
+          filters.type.toLowerCase()
+      );
+    }
+
+    if (filters.assessment) {
+      results = results.filter(
+        (row) =>
+          String(row.assessment || "").toLowerCase() ===
+          filters.assessment.toLowerCase()
+      );
+    }
+
+    if (filters.id) {
+      results = results.filter(
+        (row) =>
+          String(row.unique_ID || "").toLowerCase() === filters.id.toLowerCase()
+      );
+    }
+
+    if (filters.pka) {
+      results = results.filter((row) => {
+        const value = parseFloat(row.pka_value);
+        if (isNaN(value)) return false;
+        const { min, max, operator } = filters.pka;
+        const EPS = 1e-3;
+
+        if (operator) {
+          switch (operator) {
+            case "=":
+              return Math.abs(value - min) <= EPS;
+            case ">":
+              return value > min + EPS;
+            case ">=":
+              return value >= min - EPS;
+            case "<":
+              return value < max - EPS;
+            case "<=":
+              return value <= max + EPS;
+            default:
+              break;
+          }
+        }
+
+        if (min !== null && max !== null) {
+          return value + EPS >= min && value - EPS <= max;
+        }
+        if (min !== null) {
+          return value + EPS >= min;
+        }
+        if (max !== null) {
+          return value - EPS <= max;
+        }
+
+        return true;
+      });
+    }
+
+    if (filterType !== "all" && !filters.type) {
       results = results.filter((row) => row.pka_type === filterType);
     }
 
-    if (!rangeError) {
+    if (!rangeError && !filters.pka) {
       if (minPka) {
         results = results.filter(
           (row) => parseFloat(row.pka_value) >= parseFloat(minPka)
@@ -145,43 +392,61 @@ const SearchInterface = ({ data, loading }) => {
       }
     }
 
-    if (assessment !== "all") {
+    if (assessment !== "all" && !filters.assessment) {
       results = results.filter((row) => row.assessment === assessment);
     }
 
     results.sort((a, b) => {
-      let aVal = a[sortBy];
-      let bVal = b[sortBy];
+      if (hasTextQuery) {
+        if (a.searchScore !== b.searchScore) {
+          return b.searchScore - a.searchScore;
+        }
 
-      if (sortBy === "pka_value" || sortBy === "T") {
-        aVal = parseFloat(aVal) || 0;
-        bVal = parseFloat(bVal) || 0;
-      } else if (sortBy === "relevance") {
-        aVal = a.searchScore || 0;
-        bVal = b.searchScore || 0;
+        let aVal = a[sortBy];
+        let bVal = b[sortBy];
+
+        if (sortBy === "pka_value" || sortBy === "T") {
+          aVal = parseFloat(aVal) || 0;
+          bVal = parseFloat(bVal) || 0;
+        } else if (sortBy === "relevance") {
+          aVal = a.searchScore || 0;
+          bVal = b.searchScore || 0;
+        } else {
+          aVal = String(aVal || "").toLowerCase();
+          bVal = String(bVal || "").toLowerCase();
+        }
+
+        if (aVal < bVal) return sortOrder === "asc" ? -1 : 1;
+        if (aVal > bVal) return sortOrder === "asc" ? 1 : -1;
+        return 0;
       } else {
-        aVal = String(aVal || "").toLowerCase();
-        bVal = String(bVal || "").toLowerCase();
+        let aVal = a[sortBy];
+        let bVal = b[sortBy];
+
+        if (sortBy === "pka_value" || sortBy === "T") {
+          aVal = parseFloat(aVal) || 0;
+          bVal = parseFloat(bVal) || 0;
+        } else if (sortBy === "relevance") {
+          aVal = a.searchScore || 0;
+          bVal = b.searchScore || 0;
+        } else {
+          aVal = String(aVal || "").toLowerCase();
+          bVal = String(bVal || "").toLowerCase();
+        }
+
+        if (aVal < bVal) return sortOrder === "asc" ? -1 : 1;
+        if (aVal > bVal) return sortOrder === "asc" ? 1 : -1;
+        return 0;
       }
-
-      if (aVal < bVal) return sortOrder === "asc" ? -1 : 1;
-      if (aVal > bVal) return sortOrder === "asc" ? 1 : -1;
-
-      if (
-        debouncedQuery.trim() &&
-        sortBy !== "relevance" &&
-        a.searchScore !== b.searchScore
-      ) {
-        return b.searchScore - a.searchScore;
-      }
-
-      return 0;
     });
 
-    return results.slice(0, limit);
+    return {
+      matches: results,
+      displayedResults: results.slice(0, limit),
+    };
   }, [
     data,
-    debouncedQuery,
+    parsedQuery,
     limit,
     sortBy,
     sortOrder,
@@ -190,6 +455,7 @@ const SearchInterface = ({ data, loading }) => {
     maxPka,
     assessment,
     rangeError,
+    matchMode,
   ]);
 
   if (loading) {
@@ -249,12 +515,14 @@ const SearchInterface = ({ data, loading }) => {
     setAssessment("all");
     setSortBy("pka_value");
     setSortOrder("asc");
+    setMatchMode("all");
+    setPreferExact(true);
     setRangeError("");
     setNotification("");
   };
 
   const handleExportCSV = () => {
-    if (filteredData.length === 0) {
+    if (matches.length === 0) {
       setNotification("No data to export");
       return;
     }
@@ -274,7 +542,7 @@ const SearchInterface = ({ data, loading }) => {
 
     const csvContent = [
       headers.join(","),
-      ...filteredData.map((row) =>
+      ...matches.map((row) =>
         headers
           .map((header) => {
             const value = row[header] || "";
@@ -306,12 +574,12 @@ const SearchInterface = ({ data, loading }) => {
   };
 
   const handleExportJSON = () => {
-    if (filteredData.length === 0) {
+    if (matches.length === 0) {
       setNotification("No data to export");
       return;
     }
 
-    const blob = new Blob([JSON.stringify(filteredData, null, 2)], {
+    const blob = new Blob([JSON.stringify(matches, null, 2)], {
       type: "application/json",
     });
     const url = URL.createObjectURL(blob);
@@ -363,7 +631,25 @@ const SearchInterface = ({ data, loading }) => {
             }}
           >
             <label htmlFor="search-input" className="field">
-              <span id="search-label">Search (Name, SMILES, pKa)</span>
+              <div
+                style={{ display: "flex", alignItems: "center", gap: "8px" }}
+              >
+                <span id="search-label">Search (Name, SMILES, pKa)</span>
+                <button
+                  type="button"
+                  onClick={() => setShowHelp(!showHelp)}
+                  aria-expanded={showHelp}
+                  aria-label="Toggle search help"
+                  style={{
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                  }}
+                >
+                  ℹ️
+                </button>
+              </div>
+
               <input
                 id="search-input"
                 type="text"
@@ -375,6 +661,7 @@ const SearchInterface = ({ data, loading }) => {
                 aria-describedby="search-label search-hint"
                 role="searchbox"
               />
+
               <span
                 id="search-hint"
                 style={{
@@ -384,18 +671,100 @@ const SearchInterface = ({ data, loading }) => {
                   display: "block",
                 }}
               >
-                Search is debounced for performance
+                Filters: <code>type:</code> <code>assessment:</code>{" "}
+                <code>pka:</code>. Press ℹ️ for details.
               </span>
+
+              {showHelp && (
+                <div
+                  style={{
+                    marginTop: "8px",
+                    padding: "8px",
+                    border: "1px solid var(--border)",
+                    borderRadius: 8,
+                    background: "rgba(255,255,255,0.01)",
+                  }}
+                >
+                  <p
+                    style={{
+                      margin: 0,
+                      fontSize: "0.9rem",
+                      color: "var(--muted)",
+                    }}
+                  >
+                    Recognized filters: <code>type</code>,{" "}
+                    <code>assessment</code>, <code>id</code>,{" "}
+                    <code>unique_id</code>, <code>pka</code>.
+                  </p>
+                  <p
+                    style={{
+                      margin: "6px 0 0 0",
+                      fontSize: "0.9rem",
+                      color: "var(--muted)",
+                    }}
+                  >
+                    Query pKa examples: <code>pka:4.5</code>,{" "}
+                    <code>pka:4.5-5.0</code>, <code>pka:&gt;=4.5</code>.
+                  </p>
+                  <p
+                    style={{
+                      margin: "6px 0 0 0",
+                      fontSize: "0.9rem",
+                      color: "var(--muted)",
+                    }}
+                  >
+                    Note: Query field filters override the corresponding UI
+                    controls. Match mode only applies to free-text tokens.
+                  </p>
+                </div>
+              )}
             </label>
           </div>
 
-          <div
-            className="search-grid"
-            style={{
-              gridTemplateColumns: "1fr",
-              gap: "16px",
-            }}
-          >
+          <div style={{ marginTop: "16px" }}>
+            <button
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              style={{
+                background: "var(--panel-strong)",
+                border: "1px solid var(--border)",
+                borderRadius: "8px",
+                padding: "8px 16px",
+                color: "var(--text)",
+                cursor: "pointer",
+                fontSize: "14px",
+                fontFamily: "inherit",
+              }}
+              aria-expanded={showAdvanced}
+              aria-controls="advanced-filters"
+            >
+              {showAdvanced ? "Hide" : "Show"} Advanced Filters
+            </button>
+          </div>
+
+          {showAdvanced && (
+            <div
+              id="advanced-filters"
+              className="search-grid"
+              style={{
+                gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
+                gap: "16px",
+                marginTop: "16px",
+              }}
+            >
+            <label htmlFor="match-mode" className="field">
+              <span id="match-mode-label">Match Mode</span>
+              <select
+                id="match-mode"
+                value={matchMode}
+                onChange={(e) => setMatchMode(e.target.value)}
+                aria-label="Match mode for search tokens"
+                aria-describedby="match-mode-label"
+              >
+                <option value="all">Match all terms (AND)</option>
+                <option value="any">Match any term (OR)</option>
+              </select>
+            </label>
+
             <label htmlFor="filter-type" className="field">
               <span id="filter-type-label">pKa Type</span>
               <select
@@ -429,6 +798,12 @@ const SearchInterface = ({ data, loading }) => {
                   style={{ width: "50%" }}
                   aria-label="Minimum pKa value"
                   aria-describedby="pka-range-label"
+                  disabled={!!activePkaFilter}
+                  title={
+                    activePkaFilter
+                      ? "Ignored when a query pKa filter is active"
+                      : undefined
+                  }
                 />
                 <span aria-hidden="true">—</span>
                 <input
@@ -441,7 +816,16 @@ const SearchInterface = ({ data, loading }) => {
                   style={{ width: "50%" }}
                   aria-label="Maximum pKa value"
                   aria-describedby="pka-range-label"
+                  disabled={!!activePkaFilter}
+                  title={
+                    activePkaFilter
+                      ? "Ignored when a query pKa filter is active"
+                      : undefined
+                  }
                 />
+                {activePkaFilter && (
+                  <span className="badge">Active: {activePkaDesc}</span>
+                )}
               </div>
               {rangeError && (
                 <p
@@ -507,12 +891,12 @@ const SearchInterface = ({ data, loading }) => {
             </label>
 
             <label htmlFor="results-per-page" className="field">
-              <span id="results-per-page-label">Results Per Page</span>
+              <span id="results-per-page-label">Rows per Page</span>
               <select
                 id="results-per-page"
                 value={limit}
                 onChange={(e) => setLimit(parseInt(e.target.value))}
-                aria-label="Results per page"
+                aria-label="Rows per page"
                 aria-describedby="results-per-page-label"
               >
                 <option value={25}>25</option>
@@ -523,6 +907,7 @@ const SearchInterface = ({ data, loading }) => {
               </select>
             </label>
           </div>
+          )}
 
           <div
             style={{
@@ -549,7 +934,7 @@ const SearchInterface = ({ data, loading }) => {
                 onClick={handleExportCSV}
                 className="btn btn-secondary"
                 style={{ width: "100%" }}
-                disabled={filteredData.length === 0}
+                disabled={matches.length === 0}
               >
                 Export CSV
               </button>
@@ -557,7 +942,7 @@ const SearchInterface = ({ data, loading }) => {
                 onClick={handleExportJSON}
                 className="btn btn-secondary"
                 style={{ width: "100%" }}
-                disabled={filteredData.length === 0}
+                disabled={matches.length === 0}
               >
                 Export JSON
               </button>
@@ -597,7 +982,8 @@ const SearchInterface = ({ data, loading }) => {
       >
         <div className="panel__header">
           <h3>
-            Results ({filteredData.length} of {data.length} entries)
+            Showing {displayedResults.length} of {matches.length} matches (out
+            of {data.length} entries)
           </h3>
         </div>
         <div
@@ -630,7 +1016,7 @@ const SearchInterface = ({ data, loading }) => {
               </tr>
             </thead>
             <tbody>
-              {filteredData.map((row, index) => (
+              {displayedResults.map((row, index) => (
                 <tr
                   key={`${row.unique_ID}-${index}`}
                   style={{
@@ -705,7 +1091,7 @@ const SearchInterface = ({ data, loading }) => {
               ))}
             </tbody>
           </table>
-          {filteredData.length === 0 && (
+          {matches.length === 0 && (
             <div
               style={{
                 padding: "24px",
