@@ -609,7 +609,7 @@ const SearchInterface = ({ data, loading }) => {
                 }}
               >
                 Use filters like type:acid, assessment:Reliable, pka:4.7-4.9 or
-                pka:&gt;=4.5. Search is debounced for performance.
+                pka:>=4.5. Search is debounced for performance.
                 <span
                   style={{
                     display: "block",
@@ -822,12 +822,12 @@ const SearchInterface = ({ data, loading }) => {
             </label>
 
             <label htmlFor="results-per-page" className="field">
-              <span id="results-per-page-label">Rows Shown</span>
+              <span id="results-per-page-label">Rows per Page</span>
               <select
                 id="results-per-page"
                 value={limit}
                 onChange={(e) => setLimit(parseInt(e.target.value))}
-                aria-label="Results per page"
+                aria-label="Rows per page"
                 aria-describedby="results-per-page-label"
               >
                 <option value={25}>25</option>
